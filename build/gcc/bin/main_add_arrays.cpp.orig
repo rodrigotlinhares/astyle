@@ -1,0 +1,159 @@
+#include <CL/cl.hpp>
+#include <iostream>
+#include <stdio.h>
+#include <string>
+#include <fstream>
+#include <streambuf>
+
+cl::Program create_program(std::string file_name, cl::Context& context, cl::CommandQueue& q);
+void print_error(cl_int error_code);
+std::string file_contents(std::string file_name);
+
+int main() {
+  cl_int error;
+  cl::Context context;
+  cl::CommandQueue command_q;
+
+  cl::Program program = create_program("add_arrays.cl", context, command_q);
+
+  cl::Kernel kernel(program, "add_arrays", NULL);
+
+  const int size = 10;
+  int byte_size = size * sizeof(int);
+  int a[size];
+  int b[size];
+  int c[size];
+  for(int i = 0; i < size; i++) {
+    a[i] = 10;
+    b[i] = 5;
+  }
+
+  cl::Buffer cl_a(context, CL_MEM_COPY_HOST_PTR | CL_MEM_READ_WRITE, byte_size, &a, NULL);
+  cl::Buffer cl_b(context, CL_MEM_READ_ONLY, byte_size, NULL, NULL);
+  command_q.enqueueWriteBuffer(cl_b, CL_FALSE, 0, byte_size, &b, NULL, NULL);
+  cl::Buffer cl_c(context, CL_MEM_WRITE_ONLY, byte_size, NULL, NULL);
+  command_q.finish();
+
+  kernel.setArg(0, cl_a);
+  kernel.setArg(1, cl_b);
+  kernel.setArg(2, cl_c);
+  command_q.finish();
+
+  command_q.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(10), cl::NullRange, NULL, NULL);
+  
+  command_q.enqueueReadBuffer(cl_c, CL_TRUE, 0, byte_size, &c, NULL, NULL);
+  for(int i = 0; i < size; i++)
+    std::cout << c[i] << " ";
+  std::cout << std::endl;
+
+  std::cout << "Done." << std::endl;
+}
+
+// Reads kernel file and builds program from it.
+cl::Program create_program(std::string file_name, cl::Context& context, cl::CommandQueue& q) {
+  std::vector<cl::Platform> platforms;
+  std::vector<cl::Device> devices;
+
+  // Finds all platforms available and fills platforms vector.
+  cl::Platform::get(&platforms);
+
+  // Finds all GPU devices available for platform and fills devices vector.
+  platforms[0].getDevices(CL_DEVICE_TYPE_GPU, &devices);
+
+  // Creates Context object from devices.
+  context = cl::Context(devices, NULL, NULL, NULL, NULL);
+
+  // Creates command queue with default options.
+  q = cl::CommandQueue(context, devices[0], 0, NULL);
+
+  // Reads file and creates program object with its contents.
+  std::string contents = file_contents(file_name);
+  std::vector<std::pair<const char*, size_t> > sources;
+  sources.push_back(std::pair<const char*, size_t>(&contents[0], contents.size()));
+  cl::Program program(context, sources, NULL);
+
+  // Compiles and links program.
+  cl_int error = program.build(devices, NULL, NULL, NULL);
+  print_error(error);
+
+  return program;
+}
+
+// Reads file and puts contents into a string.
+std::string file_contents(std::string file_name) {
+  std::ifstream t(&file_name[0]);
+  return std::string((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
+}
+
+void print_error(cl_int error_code) {
+  static const char* errorString[] = {
+    "CL_SUCCESS",
+    "CL_DEVICE_NOT_FOUND",
+    "CL_DEVICE_NOT_AVAILABLE",
+    "CL_COMPILER_NOT_AVAILABLE",
+    "CL_MEM_OBJECT_ALLOCATION_FAILURE",
+    "CL_OUT_OF_RESOURCES",
+    "CL_OUT_OF_HOST_MEMORY",
+    "CL_PROFILING_INFO_NOT_AVAILABLE",
+    "CL_MEM_COPY_OVERLAP",
+    "CL_IMAGE_FORMAT_MISMATCH",
+    "CL_IMAGE_FORMAT_NOT_SUPPORTED",
+    "CL_BUILD_PROGRAM_FAILURE",
+    "CL_MAP_FAILURE",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "CL_INVALID_VALUE",
+    "CL_INVALID_DEVICE_TYPE",
+    "CL_INVALID_PLATFORM",
+    "CL_INVALID_DEVICE",
+    "CL_INVALID_CONTEXT",
+    "CL_INVALID_QUEUE_PROPERTIES",
+    "CL_INVALID_COMMAND_QUEUE",
+    "CL_INVALID_HOST_PTR",
+    "CL_INVALID_MEM_OBJECT",
+    "CL_INVALID_IMAGE_FORMAT_DESCRIPTOR",
+    "CL_INVALID_IMAGE_SIZE",
+    "CL_INVALID_SAMPLER",
+    "CL_INVALID_BINARY",
+    "CL_INVALID_BUILD_OPTIONS",
+    "CL_INVALID_PROGRAM",
+    "CL_INVALID_PROGRAM_EXECUTABLE",
+    "CL_INVALID_KERNEL_NAME",
+    "CL_INVALID_KERNEL_DEFINITION",
+    "CL_INVALID_KERNEL",
+    "CL_INVALID_ARG_INDEX",
+    "CL_INVALID_ARG_VALUE",
+    "CL_INVALID_ARG_SIZE",
+    "CL_INVALID_KERNEL_ARGS",
+    "CL_INVALID_WORK_DIMENSION",
+    "CL_INVALID_WORK_GROUP_SIZE",
+    "CL_INVALID_WORK_ITEM_SIZE",
+    "CL_INVALID_GLOBAL_OFFSET",
+    "CL_INVALID_EVENT_WAIT_LIST",
+    "CL_INVALID_EVENT",
+    "CL_INVALID_OPERATION",
+    "CL_INVALID_GL_OBJECT",
+    "CL_INVALID_BUFFER_SIZE",
+    "CL_INVALID_MIP_LEVEL",
+    "CL_INVALID_GLOBAL_WORK_SIZE",
+  };
+
+  const int errorCount = sizeof(errorString) / sizeof(errorString[0]);
+  const int index = - error_code;
+  std::cout << ((index >= 0 && index < errorCount) ? errorString[index] : "") << std::endl;
+}
